@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  # API Gateway
+  TelemetryWriteAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: Telemetry API
+          version: 1.0.0
+        paths:
+          /write/{siteId}:
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TelemetryProcessorFunction.Arn}/invocations"
+              parameters:
+                - name: siteId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+
+  # IAM Role for API Gateway to SQS
+  TelemetryAPIRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowSQSSendMessage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt TelemetryQueue.Arn
+
+  # SQS Queue for Telemetries
+  TelemetryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: TelemetryQueue
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TelemetryDLQ.Arn
+        maxReceiveCount: 3
+
+  # Dead Letter Queue (DLQ) for Telemetry Queue
+  TelemetryDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: TelemetryDLQ
+
+  # Lambda Function to Process SQS Messages and Store in DynamoDB
+  TelemetryProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/write-telemetries.handler
+      Runtime: nodejs20.x
+      CodeUri: ./dist
+      MemorySize: 128
+      Timeout: 60
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaDynamoDBExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TelemetriesStore
+        - Statement:
+            Effect: Allow
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+            Resource: !GetAtt TelemetryQueue.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TelemetriesStore
+      Events:
+        TelemetryAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemetryWriteAPI
+            Path: /write/{siteId}
+            Method: POST
+        TelemetryQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TelemetryQueue.Arn
+            BatchSize: 10
+
+  # Lambda Permission for API Gateway
+  TelemetryProcessorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TelemetryProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TelemetryWriteAPI}/*/POST/write/{siteId}"
+
+  # DynamoDB Table for Storing Telemetries
+  TelemetriesStore:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TelemetriesStore
+      AttributeDefinitions:
+        - AttributeName: siteId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: siteId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  TelemetryWriteAPIUrl:
+    Description: "Telemetry Write API Endpoint URL"
+    Value: !Sub "https://${TelemetryWriteAPI}.execute-api.${AWS::Region}.amazonaws.com/dev/write/{siteId}"
+
+  TelemetryQueueUrl:
+    Description: "Telemetry SQS Queue URL"
+    Value: !Ref TelemetryQueue
+
+  TelemetryDLQUrl:
+    Description: "Telemetry Dead Letter Queue URL"
+    Value: !Ref TelemetryDLQ
+
+  TelemetryProcessorFunctionArn:
+    Description: "Telemetry Processor Lambda Function ARN"
+    Value: !GetAtt TelemetryProcessorFunction.Arn

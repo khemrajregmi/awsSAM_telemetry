@@ -1,0 +1,7 @@
+{
+  "Records": [
+    {
+      "body": "{\"deviceId\": \"sampleDeviceId\", \"temperature\": {\"celsius\": 45, \"fahrenheit\": \"88\"}, \"version\": 1, \"creationTime\": \"2023-01-01T00:00:00Z\", \"humidity\": 45, \"pressure\": 1013, \"siteId\": \"site#123\"}"
+    }
+  ]
+}
