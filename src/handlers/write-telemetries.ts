@@ -3,6 +3,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 const client = new DynamoDBClient();
+
 const docClient = DynamoDBDocumentClient.from(client);
 
 export const handler: APIGatewayProxyHandler = async (event) => {
@@ -24,22 +25,17 @@ export const handler: APIGatewayProxyHandler = async (event) => {
         };
     }
 
-    // Generate a unique timestamp for each entry
-    const timestamp = new Date().toISOString();
-
-    // Create the parameters for the DynamoDB put operation
     const params = {
         TableName: process.env.TABLE_NAME!,
         Item: {
-            siteId: siteId,         // Partition key
-            timestamp: timestamp,   // Sort key (unique identifier for each record)
-            ...body                 // Spread the rest of the data from the request body
+            siteId: siteId,
+            ...body
         }
     };
 
     try {
         await docClient.send(new PutCommand(params));
-        console.info(`Successfully stored data in DynamoDB for siteId: ${siteId} at timestamp: ${timestamp}`);
+        console.info(`Successfully stored data in dynamodb for siteId: ${siteId}`);
         return {
             statusCode: 200,
             body: JSON.stringify({ message: 'Data stored successfully' })
