@@ -47,7 +47,7 @@ Resources:
                   required: true
                   schema:
                     type: string
-
+ 
   # IAM Role for API Gateway to SQS
   TelemetryAPIRole:
     Type: AWS::IAM::Role
