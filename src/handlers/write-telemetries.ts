@@ -5,7 +5,7 @@ import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-export const handler: SQSHandler = async (event: SQSEvent) => {
+export const handler: SQSHandler = async (event: SQSEvent, context?, callback?) => {
     for (const record of event.Records) {
         const message = JSON.parse(record.body);
         const siteId = message.siteId;
